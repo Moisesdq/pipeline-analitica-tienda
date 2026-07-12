@@ -1,0 +1,32 @@
+name: Run ETL Pipeline Daily
+
+on:
+  schedule:
+    # Se ejecutará automáticamente todos los días a las 05:00 UTC (Media noche en Latam aprox)
+    - cron: '0 5 * * *' 
+  workflow_dispatch: 
+    # Esto te activa un botón en GitHub para que lo puedas correr manualmente cuando quieras
+
+jobs:
+  run-etl:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Copiar repositorio de GitHub
+      uses: actions/checkout@v4
+
+    - name: Configurar entorno de Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Instalar librerías del proyecto
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas gspread google-auth duckdb
+
+    - name: Ejecutar script de Python
+      env:
+        # Aquí le inyectamos de forma ultra segura tu llave de Google
+        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      run: python pipeline.py
