@@ -58,7 +58,7 @@ Para este MVP, se ha diseñado un pipeline de datos tipo ELT (Extract, Load, Tra
 | **Ingesta (Operacional)** | AppSheet + Google Sheets | Aplicación móvil no-code para captura de datos en el punto de venta (escaneo de códigos de barras) con almacenamiento crudo en hojas de cálculo. |
 | **Extracción (Extract)** | Python (Google Sheets API) | Script que lee los datos operacionales de forma segura mediante credenciales de servicio. |
 | **Procesamiento (Transform)** | DuckDB | Motor SQL analítico en memoria utilizado dentro de Python para cruzar ventas, calcular márgenes y estructurar el modelo analítico. |
-| **Carga y Almacenamiento (Load)** | Google BigQuery | Data Warehouse en la nube que actúa como la fuente única de verdad (SSOT) para los datos limpios. |
+|3. **Carga y Almacenamiento (Load):** Para mantener una infraestructura simplificada y de costo cero (aprovechando el Free Tier), no se utiliza un Data Warehouse externo. En su lugar, el DataFrame resultante procesado por DuckDB se carga directamente como una vista materializada en una nueva pestaña (`BI_Ventas_Modeladas`) dentro del mismo Google Sheets. Looker Studio se conecta exclusivamente a esta capa limpia, garantizando un rendimiento óptimo en la visualización sin incurrir en costos de licenciamiento o cómputo en la nube. |
 | **Visualización (BI)** | Looker Studio | Dashboard interactivo optimizado para dispositivos móviles con los KPIs críticos del negocio. |
 | **Orquestación** | GitHub Actions | Automatización del pipeline (cron job) para ejecutar la ingesta y transformación de forma programada diariamente. |
 
