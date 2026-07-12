@@ -2,8 +2,8 @@ name: Run ETL Pipeline Daily
 
 on:
   schedule:
-    # Se ejecutará automáticamente todos los días a las 05:00 UTC (Media noche en Latam aprox)
-    - cron: '0 5 * * *' 
+    # Se ejecutará automáticamente todos los días a las 07:00 UTC (Media noche en Latam aprox)
+    - cron: '0 7 * * *' 
   workflow_dispatch: 
     # Esto te activa un botón en GitHub para que lo puedas correr manualmente cuando quieras
 
