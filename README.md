@@ -38,7 +38,9 @@ A continuación se presenta el diseño del Modelo Entidad-Relación propuesto pa
 | `id_venta` | INT | FK -> Ventas | Venta asociada |
 | `id_producto` | VARCHAR(50) | FK -> Productos | Producto vendido |
 | `cantidad` | INT | Not Null | Unidades vendidas |
-| `subtotal` | DECIMAL(10,2)| Not Null | cantidad * precio_venta |
+| `subtotal` | DECIMAL(10,2)| Not Null | cantidad * precio_venta_aplicado |
+| `precio_compra_aplicado` | DECIMAL(10,2)| Not Null | Congela el costo histórico en el momento de la venta (SCD) |
+| `precio_venta_aplicado` | DECIMAL(10,2)| Not Null | Congela el precio al público en el momento de la venta (SCD) |
 
 ### Tabla: Gastos
 | Campo | Tipo de Datos | Atributos | Descripción |
@@ -92,7 +94,7 @@ Para resolver la necesidad operacional de mantener el inventario sincronizado al
 Con los datos operacionales capturados de forma segura, se diseñó e implementó un pipeline de extracción, transformación y carga (ETL) programático para desacoplar la base de datos transaccional del entorno analítico:
 
 1. **Extracción (Extract):** Utilizando Python junto con las librerías `gspread` y `google-auth`, el script se autentica de forma segura mediante una Cuenta de Servicio (Service Account) en Google Cloud Platform (GCP) para extraer las tablas crudas (`Ventas`, `Detalle_Ventas`, `Productos` y `Gastos`) hacia DataFrames de `Pandas` en memoria RAM.
-2. **Transformación (Transform):** Se integró **DuckDB** como motor de base de datos analítico columnar en-memoria. Mediante consultas SQL avanzadas (`JOINs`), se cruzaron las relaciones de las tablas y se realizó ingeniería de características (*Feature Engineering*) para calcular métricas financieras críticas en tiempo real (ej. `Ganancia Bruta = (Precio Venta - Precio Compra) * Cantidad`).
+2. **Transformación (Transform):** Se integró **DuckDB** como motor de base de datos analítico columnar en-memoria. Mediante consultas SQL avanzadas (`JOINs`), se cruzaron las relaciones de las tablas y se realizó ingeniería de características (*Feature Engineering*) para calcular métricas financieras críticas en tiempo real. **Además, se manejó la dimensión lentamente cambiante (SCD) de los precios**, calculando la utilidad sobre la foto histórica congelada: `Ganancia Bruta = (Precio Venta Aplicado - Precio Compra Aplicado) * Cantidad`.
 3. **Carga (Load):** Los datos completamente modelados y limpios se consolidan en una capa lista para el consumo de Inteligencia de Negocios (BI), optimizando el rendimiento de las consultas y evitando el procesamiento costoso en la herramienta de visualización.
 
 ## Fase 4: Visualización e Inteligencia de Negocios (BI)

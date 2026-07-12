@@ -16,7 +16,7 @@ if "GOOGLE_CREDENTIALS" in os.environ:
         scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     )
 else:
-    print("💻 Computadora local detectada. Cargando credenciales locales...")
+    print("Computadora local detectada. Cargando credenciales locales...")
     creds = Credentials.from_service_account_file(
         "credenciales.json", 
         scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -43,10 +43,10 @@ SELECT
     dv.id_producto,
     p.nombre,
     dv.cantidad,
-    p.precio_compra,
-    p.precio_venta,
-    (dv.cantidad * p.precio_venta) as subtotal,
-    ((p.precio_venta - p.precio_compra) * dv.cantidad) as ganancia_bruta
+    dv.precio_compra_aplicado AS precio_compra,
+    dv.precio_venta_aplicado AS precio_venta,
+    (dv.cantidad * dv.precio_venta_aplicado) as subtotal,
+    ((dv.precio_venta_aplicado - dv.precio_compra_aplicado) * dv.cantidad) as ganancia_bruta
 FROM df_detalle dv
 JOIN df_ventas v ON dv.id_venta = v.id_venta
 JOIN df_productos p ON dv.id_producto = p.id_producto
