@@ -49,18 +49,17 @@ A continuación se presenta el diseño del Modelo Entidad-Relación propuesto pa
 | `descripcion` | VARCHAR(150)| Not Null | Detalle (Ej. 'Luz Marzo') |
 | `monto` | DECIMAL(10,2)| Not Null | Cantidad de dinero pagada |
 
-## 3. Arquitectura de Datos (Modern Data Stack Ligero)
-
-Para este MVP, se ha diseñado un pipeline de datos tipo ELT (Extract, Load, Transform) optimizado para bajo costo y alta escalabilidad. El flujo se divide en las siguientes capas:
+### 3. Arquitectura de Datos (Modern Data Stack Ligero)
+Para este MVP, se ha diseñado un pipeline de datos tipo ETL (Extract, Transform, Load) optimizado para bajo costo y alta escalabilidad. El flujo se divide en las siguientes capas:
 
 | Capa del Pipeline | Tecnología Utilizada | Función Específica |
 | :--- | :--- | :--- |
-| **Ingesta (Operacional)** | AppSheet + Google Sheets | Aplicación móvil no-code para captura de datos en el punto de venta (escaneo de códigos de barras) con almacenamiento crudo en hojas de cálculo. |
-| **Extracción (Extract)** | Python (Google Sheets API) | Script que lee los datos operacionales de forma segura mediante credenciales de servicio. |
-| **Procesamiento (Transform)** | DuckDB | Motor SQL analítico en memoria utilizado dentro de Python para cruzar ventas, calcular márgenes y estructurar el modelo analítico. |
-|3. **Carga y Almacenamiento (Load):** Para mantener una infraestructura simplificada y de costo cero (aprovechando el Free Tier), no se utiliza un Data Warehouse externo. En su lugar, el DataFrame resultante procesado por DuckDB se carga directamente como una vista materializada en una nueva pestaña (`BI_Ventas_Modeladas`) dentro del mismo Google Sheets. Looker Studio se conecta exclusivamente a esta capa limpia, garantizando un rendimiento óptimo en la visualización sin incurrir en costos de licenciamiento o cómputo en la nube. |
-| **Visualización (BI)** | Looker Studio | Dashboard interactivo optimizado para dispositivos móviles con los KPIs críticos del negocio. |
-| **Orquestación** | GitHub Actions | Automatización del pipeline (cron job) para ejecutar la ingesta y transformación de forma programada diariamente. |
+| **Ingesta (Operacional)** | AppSheet + Google Sheets | App móvil no-code para captura en punto de venta (escáner de barras) con almacenamiento crudo. |
+| **Extracción (Extract)** | Python (Google Sheets API) | Script que lee los datos operacionales de forma segura mediante credenciales de servicio (Service Account). |
+| **Procesamiento (Transform)** | DuckDB | Motor SQL analítico en memoria (dentro de Python) para cruzar ventas, calcular márgenes y modelar datos. |
+| **Carga (Load)** | Google Sheets | Carga del DataFrame procesado a una vista materializada (`BI_Ventas_Modeladas`), evitando Data Warehouses costosos. |
+| **Visualización (BI)** | Looker Studio | Dashboard interactivo conectado a la vista limpia, garantizando alto rendimiento con costo cero de cómputo. |
+| **Orquestación** | GitHub Actions | Automatización programada (cron job) para ejecutar el pipeline de Python diariamente en la nube. |
 
 ## ⚠️ Consideraciones Técnicas y Trade-offs
 * **Ausencia de transacciones ACID nativas:** Al emplear Google Sheets como base de datos operacional (OLTP) acoplada a AppSheet, se asume el riesgo de concurrencia en el cálculo de inventario si se registran transacciones simultáneas *offline*. Dado que el contexto del MVP es para un único punto de venta (un solo usuario concurrente), el riesgo es mínimo. 
