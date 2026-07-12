@@ -62,6 +62,10 @@ Para este MVP, se ha diseñado un pipeline de datos tipo ELT (Extract, Load, Tra
 | **Visualización (BI)** | Looker Studio | Dashboard interactivo optimizado para dispositivos móviles con los KPIs críticos del negocio. |
 | **Orquestación** | GitHub Actions | Automatización del pipeline (cron job) para ejecutar la ingesta y transformación de forma programada diariamente. |
 
+## ⚠️ Consideraciones Técnicas y Trade-offs
+* **Ausencia de transacciones ACID nativas:** Al emplear Google Sheets como base de datos operacional (OLTP) acoplada a AppSheet, se asume el riesgo de concurrencia en el cálculo de inventario si se registran transacciones simultáneas *offline*. Dado que el contexto del MVP es para un único punto de venta (un solo usuario concurrente), el riesgo es mínimo. 
+* **Mitigación:** Como control de calidad de datos, se establece una auditoría manual de conciliación a fin de mes para cruzar las métricas del inventario físico contra el stock digital.
+
 ## Fase 2: Desarrollo del Módulo de Ingesta (AppSheet)
 
 Para garantizar la adopción del sistema por parte del usuario final (quien no posee habilidades técnicas), se descartó el uso de un POS tradicional en PC. En su lugar, se implementó una interfaz móvil No-Code utilizando **AppSheet** conectada al Data Lake crudo en Google Sheets.
