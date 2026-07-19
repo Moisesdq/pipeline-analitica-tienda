@@ -115,15 +115,19 @@ def run_pipeline():
     print("📤 Subiendo tablas procesadas a Google Sheets...")
 
     def reemplazar_hoja(nombre_hoja, dataframe, cols):
-        """Función auxiliar para borrar y recrear hojas (Idempotencia)"""
+        """Función auxiliar para limpiar y actualizar hojas (Mantiene la conexión con Looker)"""
         try:
-            sheet_id.del_worksheet(sheet_id.worksheet(nombre_hoja))
+            hoja = sheet_id.worksheet(nombre_hoja)
+            hoja.clear() # Limpiamos el contenido sin borrar la pestaña
+            print(f"♻️ Pestaña '{nombre_hoja}' limpiada con éxito.")
         except Exception:
-            pass # Si no existe, ignoramos
-        hoja_nueva = sheet_id.add_worksheet(title=nombre_hoja, rows="1000", cols=cols)
+            # Si no existe, la creamos por primera vez
+            hoja = sheet_id.add_worksheet(title=nombre_hoja, rows="1000", cols=cols)
+            print(f"✨ Pestaña '{nombre_hoja}' creada desde cero.")
+            
         datos = [dataframe.columns.values.tolist()] + dataframe.values.tolist()
-        hoja_nueva.update(range_name='A1', values=datos)
-        print(f"✅ Pestaña '{nombre_hoja}' recreada y actualizada.")
+        hoja.update(range_name='A1', values=datos)
+        print(f"✅ Pestaña '{nombre_hoja}' actualizada.")
 
     # 🌟 NUEVO: Usamos la función para subir las 3 tablas limpiamente
     reemplazar_hoja("BI_Ventas_Modeladas", df_modelo_ventas, "20")
@@ -132,5 +136,6 @@ def run_pipeline():
 
     print("🎉 ¡ETL FINALIZADO CON ÉXITO! Tu Dashboard está blindado.")
 
+# ESTO VA PEGADO AL MARGEN IZQUIERDO (Fuera de run_pipeline)
 if __name__ == "__main__":
     run_pipeline()

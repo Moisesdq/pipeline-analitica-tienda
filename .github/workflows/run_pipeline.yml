@@ -3,7 +3,7 @@ name: Run ETL Pipeline Daily
 on:
   schedule:
     # Se ejecutará automáticamente todos los días a las 07:00 UTC (Media noche en Latam aprox)
-    - cron: '0 7 * * *' 
+    - cron: '5 2 * * *' 
   workflow_dispatch: 
     # Esto te activa un botón en GitHub para que lo puedas correr manualmente cuando quieras
 
@@ -25,8 +25,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install pandas gspread google-auth duckdb
 
-    - name: Ejecutar script de Python
+    - name: Crear archivo de credenciales
       env:
-        # Aquí le inyectamos de forma ultra segura tu llave de Google
         GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      run: echo "$GOOGLE_CREDENTIALS" > credenciales.json
+
+    - name: Ejecutar script de Python
       run: python pipeline.py
