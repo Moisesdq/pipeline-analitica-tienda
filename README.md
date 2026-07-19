@@ -77,8 +77,7 @@ El flujo Batch está orquestado mediante GitHub Actions con una expresión Cron 
 * **Ausencia de transacciones ACID nativas:** Al emplear Google Sheets como base de datos operacional (OLTP) acoplada a AppSheet, se asume el riesgo de concurrencia en el cálculo de inventario si se registran transacciones simultáneas *offline*. Dado que el contexto del MVP es para un único punto de venta (un solo usuario concurrente), el riesgo es mínimo. 
 * **Mitigación:** Como control de calidad de datos, se establece una auditoría manual de conciliación a fin de mes para cruzar las métricas del inventario físico contra el stock digital.
 
-## Fase 2: Desarrollo del Módulo de Ingesta (AppSheet)
-
+## 4. Desarrollo del Módulo de Ingesta (AppSheet)
 Para garantizar la adopción del sistema por parte del usuario final (quien no posee habilidades técnicas), se descartó el uso de un POS tradicional en PC. En su lugar, se implementó una interfaz móvil No-Code utilizando **AppSheet** conectada al Data Lake crudo en Google Sheets.
 
 ### Características Técnicas de la Ingesta:
