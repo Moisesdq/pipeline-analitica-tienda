@@ -2,7 +2,7 @@ name: Run ETL Pipeline Daily
 
 on:
   schedule:
-    # Se ejecutará automáticamente todos los días a las 07:00 UTC (Media noche en Latam aprox)
+    # Se ejecutará automáticamente todos los días a las 10:05 UTC (Para hacer el cierre de inventario diario)
     - cron: '5 2 * * *' 
   workflow_dispatch: 
     # Esto te activa un botón en GitHub para que lo puedas correr manualmente cuando quieras
