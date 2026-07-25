@@ -30,7 +30,7 @@ def run_pipeline():
     df_gastos = pd.DataFrame(sheet_id.worksheet('Gastos').get_all_records())
 
     print("🧹 Curando los datos y normalizando formatos...")
-    # Normalización de tipos numéricos (¡Ahora con filtro anti-comas!)
+    # Normalización de tipos numéricos (Filtro anti-comas riguroso)
     df_detalle['cantidad'] = pd.to_numeric(df_detalle['cantidad'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
     df_detalle['precio_compra_aplicado'] = pd.to_numeric(df_detalle['precio_compra_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
     df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
@@ -39,17 +39,19 @@ def run_pipeline():
     df_productos['stock_minimo'] = pd.to_numeric(df_productos['stock_minimo'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
     df_gastos['monto'] = pd.to_numeric(df_gastos['monto'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
-    # Limpieza de textos e IDs (convertir a string y quitar espacios)
+    # Limpieza de textos e IDs
     for df in [df_ventas, df_detalle, df_productos, df_gastos]:
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].astype(str).str.strip()
+            
+    # Rellenar métodos de pago vacíos
     df_ventas['metodo_pago'] = df_ventas['metodo_pago'].replace('', 'No Definido')
 
     # Normalización de Fechas para Looker Studio
     df_ventas['fecha_hora'] = pd.to_datetime(df_ventas['fecha_hora'], errors='coerce')
     df_ventas['fecha_hora'] = df_ventas['fecha_hora'].fillna(pd.Timestamp.now()).dt.strftime('%Y-%m-%d %H:%M:%S')
     
-    # Estandarizar la fecha de gastos (lee el formato DD/MM/YYYY)
+    # Estandarizar fecha de gastos
     df_gastos['fecha'] = pd.to_datetime(df_gastos['fecha'], format='%d/%m/%Y', errors='coerce').dt.strftime('%Y-%m-%d')
 
     # ==========================================
@@ -57,18 +59,19 @@ def run_pipeline():
     # ==========================================
     print("⚡ Transformando datos con motor SQL en memoria (DuckDB)...")
 
-# A) Modelo de Ventas (Con filtro contra IDs nulos/vacíos para evitar Fan-out)
+    # A) Modelo de Ventas (Agregamos la columna 'mes' para compatibilidad con filtros)
     query_ventas_completas = """
         SELECT 
+            SUBSTRING(v.fecha_hora, 1, 7) AS mes,
             v.fecha_hora,
             v.metodo_pago,
             d.id_producto,
             p.nombre,
             d.cantidad,
-            d.precio_compra_aplicado AS precio_compra,
-            d.precio_venta_aplicado AS precio_venta,
-            (d.cantidad * d.precio_venta_aplicado) AS subtotal,
-            ((d.precio_venta_aplicado - d.precio_compra_aplicado) * d.cantidad) AS ganancia_bruta
+            ROUND(CAST(d.precio_compra_aplicado AS DOUBLE), 2) AS precio_compra,
+            ROUND(CAST(d.precio_venta_aplicado AS DOUBLE), 2) AS precio_venta,
+            ROUND(CAST(d.cantidad * d.precio_venta_aplicado AS DOUBLE), 2) AS subtotal,
+            ROUND(CAST((d.precio_venta_aplicado - d.precio_compra_aplicado) * d.cantidad AS DOUBLE), 2) AS ganancia_bruta
         FROM df_ventas AS v
         LEFT JOIN df_detalle AS d 
             ON v.id_venta = d.id_venta
@@ -78,7 +81,7 @@ def run_pipeline():
     """
     df_modelo_ventas = duckdb.query(query_ventas_completas).to_df().fillna("")
 
-# B) Modelo de Inventario con Alertas
+    # B) Modelo de Inventario con Alertas
     query_inventario = """
         WITH ventas_resumen AS (
             SELECT 
@@ -109,7 +112,7 @@ def run_pipeline():
     """
     df_inventario = duckdb.query(query_inventario).to_df().fillna("")
 
-# C) Modelo Financiero (Utilidad Neta Real agrupada por MES)
+    # C) Modelo Financiero (Valores Numéricos Forzados)
     query_financiero = """
         WITH ingresos AS (
             SELECT 
@@ -132,10 +135,15 @@ def run_pipeline():
         )
         SELECT 
             COALESCE(i.mes_anio, e.mes_anio) AS mes,
-            COALESCE(i.ingresos_totales, 0) AS ingresos_totales,
-            COALESCE(i.ganancia_bruta, 0) AS ganancia_bruta,
-            COALESCE(e.gastos_totales, 0) AS gastos_totales,
-            (COALESCE(i.ganancia_bruta, 0) - COALESCE(e.gastos_totales, 0)) AS utilidad_neta_real
+            ROUND(CAST(COALESCE(i.ingresos_totales, 0) AS DOUBLE), 2) AS ingresos_totales,
+            ROUND(CAST(COALESCE(i.ganancia_bruta, 0) AS DOUBLE), 2) AS ganancia_bruta,
+            ROUND(CAST(COALESCE(e.gastos_totales, 0) AS DOUBLE), 2) AS gastos_totales,
+            ROUND(CAST(COALESCE(i.ganancia_bruta, 0) - COALESCE(e.gastos_totales, 0) AS DOUBLE), 2) AS utilidad_neta_real,
+            CASE 
+                WHEN COALESCE(i.ingresos_totales, 0) > 0 
+                THEN ROUND(CAST((COALESCE(i.ganancia_bruta, 0) / i.ingresos_totales) AS DOUBLE), 4)
+                ELSE 0.0 
+            END AS margen_porcentaje
         FROM ingresos i
         FULL OUTER JOIN egresos e 
             ON i.mes_anio = e.mes_anio
@@ -150,13 +158,11 @@ def run_pipeline():
     print("📤 Subiendo tablas procesadas a Google Sheets...")
 
     def reemplazar_hoja(nombre_hoja, dataframe, cols):
-        """Función auxiliar para limpiar y actualizar hojas (Mantiene la conexión con Looker)"""
         try:
             hoja = sheet_id.worksheet(nombre_hoja)
-            hoja.clear() # Limpiamos el contenido sin borrar la pestaña
+            hoja.clear()
             print(f"♻️ Pestaña '{nombre_hoja}' limpiada con éxito.")
         except Exception:
-            # Si no existe, la creamos por primera vez
             hoja = sheet_id.add_worksheet(title=nombre_hoja, rows="1000", cols=cols)
             print(f"✨ Pestaña '{nombre_hoja}' creada desde cero.")
             
@@ -164,7 +170,6 @@ def run_pipeline():
         hoja.update(range_name='A1', values=datos)
         print(f"✅ Pestaña '{nombre_hoja}' actualizada.")
 
-    # Carga de las 3 tablas procesadas
     reemplazar_hoja("BI_Ventas_Modeladas", df_modelo_ventas, "20")
     reemplazar_hoja("BI_Inventario", df_inventario, "10")
     reemplazar_hoja("BI_Finanzas_Resumen", df_financiero, "10")
