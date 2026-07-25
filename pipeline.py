@@ -36,6 +36,7 @@ def run_pipeline():
     df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
     
     df_productos['stock_inicial'] = pd.to_numeric(df_productos['stock_inicial'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    df_productos['stock_minimo'] = pd.to_numeric(df_productos['stock_minimo'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
     df_gastos['monto'] = pd.to_numeric(df_gastos['monto'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
     # Limpieza de textos e IDs (convertir a string y quitar espacios)
@@ -74,7 +75,7 @@ def run_pipeline():
     """
     df_modelo_ventas = duckdb.query(query_ventas_completas).to_df().fillna("")
 
-    # B) Modelo de Inventario con Alertas
+# B) Modelo de Inventario con Alertas
     query_inventario = """
         WITH ventas_resumen AS (
             SELECT 
@@ -88,11 +89,12 @@ def run_pipeline():
             p.id_producto,
             p.nombre,
             p.stock_inicial,
+            p.stock_minimo,
             COALESCE(vr.total_vendido, 0) AS total_vendido,
             (p.stock_inicial - COALESCE(vr.total_vendido, 0)) AS stock_actual,
             CASE 
                 WHEN (p.stock_inicial - COALESCE(vr.total_vendido, 0)) < 0 THEN 'REVISAR: Stock Negativo'
-                WHEN (p.stock_inicial - COALESCE(vr.total_vendido, 0)) <= 3 THEN 'ALERTA: Stock Bajo'
+                WHEN (p.stock_inicial - COALESCE(vr.total_vendido, 0)) <= p.stock_minimo THEN 'ALERTA: Stock Bajo'
                 ELSE 'OK'
             END AS estado_inventario
         FROM df_productos AS p
