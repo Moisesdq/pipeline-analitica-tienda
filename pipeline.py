@@ -43,6 +43,7 @@ def run_pipeline():
     for df in [df_ventas, df_detalle, df_productos, df_gastos]:
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].astype(str).str.strip()
+    df_ventas['metodo_pago'] = df_ventas['metodo_pago'].replace('', 'No Definido')
 
     # Normalización de Fechas para Looker Studio
     df_ventas['fecha_hora'] = pd.to_datetime(df_ventas['fecha_hora'], errors='coerce')
