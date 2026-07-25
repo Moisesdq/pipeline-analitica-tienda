@@ -47,7 +47,9 @@ def run_pipeline():
     # Normalización de Fechas para Looker Studio
     df_ventas['fecha_hora'] = pd.to_datetime(df_ventas['fecha_hora'], errors='coerce')
     df_ventas['fecha_hora'] = df_ventas['fecha_hora'].fillna(pd.Timestamp.now()).dt.strftime('%Y-%m-%d %H:%M:%S')
-
+    
+    # Estandarizar la fecha de gastos (lee el formato DD/MM/YYYY)
+    df_gastos['fecha'] = pd.to_datetime(df_gastos['fecha'], format='%d/%m/%Y', errors='coerce').dt.strftime('%Y-%m-%d')
 
     # ==========================================
     # 3. TRANSFORMACIÓN CON DUCKDB (SQL BLINDADO)
@@ -106,28 +108,37 @@ def run_pipeline():
     """
     df_inventario = duckdb.query(query_inventario).to_df().fillna("")
 
-    # C) Modelo Financiero (Utilidad Neta Real segura)
+# C) Modelo Financiero (Utilidad Neta Real agrupada por MES)
     query_financiero = """
         WITH ingresos AS (
             SELECT 
+                SUBSTRING(v.fecha_hora, 1, 7) AS mes_anio,
                 SUM(d.cantidad * d.precio_venta_aplicado) AS ingresos_totales,
                 SUM((d.precio_venta_aplicado - d.precio_compra_aplicado) * d.cantidad) AS ganancia_bruta
-            FROM df_detalle AS d
-            INNER JOIN df_ventas AS v 
-                ON d.id_venta = v.id_venta
-            WHERE d.id_venta IS NOT NULL AND TRIM(CAST(d.id_venta AS VARCHAR)) != ''
+            FROM df_ventas AS v
+            LEFT JOIN df_detalle AS d 
+                ON v.id_venta = d.id_venta
+            WHERE v.id_venta IS NOT NULL AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
+            GROUP BY SUBSTRING(v.fecha_hora, 1, 7)
         ),
         egresos AS (
-            SELECT SUM(monto) AS gastos_totales 
+            SELECT 
+                SUBSTRING(fecha, 1, 7) AS mes_anio,
+                SUM(monto) AS gastos_totales 
             FROM df_gastos
             WHERE monto IS NOT NULL
+            GROUP BY SUBSTRING(fecha, 1, 7)
         )
         SELECT 
-            COALESCE(ingresos.ingresos_totales, 0) AS ingresos_totales,
-            COALESCE(ingresos.ganancia_bruta, 0) AS ganancia_bruta,
-            COALESCE(egresos.gastos_totales, 0) AS gastos_totales,
-            (COALESCE(ingresos.ganancia_bruta, 0) - COALESCE(egresos.gastos_totales, 0)) AS utilidad_neta_real
-        FROM ingresos, egresos
+            COALESCE(i.mes_anio, e.mes_anio) AS mes,
+            COALESCE(i.ingresos_totales, 0) AS ingresos_totales,
+            COALESCE(i.ganancia_bruta, 0) AS ganancia_bruta,
+            COALESCE(e.gastos_totales, 0) AS gastos_totales,
+            (COALESCE(i.ganancia_bruta, 0) - COALESCE(e.gastos_totales, 0)) AS utilidad_neta_real
+        FROM ingresos i
+        FULL OUTER JOIN egresos e 
+            ON i.mes_anio = e.mes_anio
+        ORDER BY mes DESC
     """
     df_financiero = duckdb.query(query_financiero).to_df().fillna("")
 
