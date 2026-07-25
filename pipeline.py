@@ -30,12 +30,13 @@ def run_pipeline():
     df_gastos = pd.DataFrame(sheet_id.worksheet('Gastos').get_all_records())
 
     print("🧹 Curando los datos y normalizando formatos...")
-    # Normalización de tipos numéricos
-    df_detalle['cantidad'] = pd.to_numeric(df_detalle['cantidad'], errors='coerce').fillna(0)
-    df_detalle['precio_compra_aplicado'] = pd.to_numeric(df_detalle['precio_compra_aplicado'], errors='coerce').fillna(0)
-    df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'], errors='coerce').fillna(0)
-    df_productos['stock_inicial'] = pd.to_numeric(df_productos['stock_inicial'], errors='coerce').fillna(0)
-    df_gastos['monto'] = pd.to_numeric(df_gastos['monto'], errors='coerce').fillna(0)
+    # Normalización de tipos numéricos (¡Ahora con filtro anti-comas!)
+    df_detalle['cantidad'] = pd.to_numeric(df_detalle['cantidad'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    df_detalle['precio_compra_aplicado'] = pd.to_numeric(df_detalle['precio_compra_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    
+    df_productos['stock_inicial'] = pd.to_numeric(df_productos['stock_inicial'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    df_gastos['monto'] = pd.to_numeric(df_gastos['monto'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
     # Limpieza de textos e IDs (convertir a string y quitar espacios)
     for df in [df_ventas, df_detalle, df_productos, df_gastos]:
@@ -52,7 +53,7 @@ def run_pipeline():
     # ==========================================
     print("⚡ Transformando datos con motor SQL en memoria (DuckDB)...")
 
-    # A) Modelo de Ventas (Con filtro contra IDs nulos/vacíos para evitar Fan-out)
+# A) Modelo de Ventas (Con filtro contra IDs nulos/vacíos para evitar Fan-out)
     query_ventas_completas = """
         SELECT 
             v.fecha_hora,
@@ -64,13 +65,12 @@ def run_pipeline():
             d.precio_venta_aplicado AS precio_venta,
             (d.cantidad * d.precio_venta_aplicado) AS subtotal,
             ((d.precio_venta_aplicado - d.precio_compra_aplicado) * d.cantidad) AS ganancia_bruta
-        FROM df_detalle AS d
-        INNER JOIN df_ventas AS v 
-            ON d.id_venta = v.id_venta
+        FROM df_ventas AS v
+        LEFT JOIN df_detalle AS d 
+            ON v.id_venta = d.id_venta
         LEFT JOIN df_productos AS p 
             ON d.id_producto = p.id_producto
-        WHERE d.id_venta IS NOT NULL AND TRIM(CAST(d.id_venta AS VARCHAR)) != ''
-          AND d.id_producto IS NOT NULL AND TRIM(CAST(d.id_producto AS VARCHAR)) != ''
+        WHERE v.id_venta IS NOT NULL AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
     """
     df_modelo_ventas = duckdb.query(query_ventas_completas).to_df().fillna("")
 
