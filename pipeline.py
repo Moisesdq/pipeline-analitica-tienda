@@ -157,28 +157,21 @@ def run_pipeline():
     """
     df_financiero = duckdb.query(query_financiero).to_df().fillna("")
 
-    # D) Modelo de Deudores (Fiados)
+    # D) Modelo de Deudores para el Dashboard (Solo lectura analítica)
     query_deudores = """
         SELECT 
-            v.fecha_hora,
-            v.id_venta,
-            v.cliente_nota,
-            p.nombre AS producto,
-            d.cantidad,
-            ROUND(CAST(d.precio_venta_aplicado AS DOUBLE), 2) AS precio_unitario,
-            ROUND(CAST(d.cantidad * d.precio_venta_aplicado AS DOUBLE), 2) AS deuda_total
+            v.cliente_nota AS cliente,
+            SUM(d.cantidad * d.precio_venta_aplicado) AS total_fiado_historico,
+            COUNT(DISTINCT v.id_venta) AS cantidad_compras_fiadas
         FROM df_ventas AS v
         LEFT JOIN df_detalle AS d 
             ON v.id_venta = d.id_venta
-        LEFT JOIN df_productos AS p 
-            ON d.id_producto = p.id_producto
         WHERE v.id_venta IS NOT NULL 
           AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
           AND LOWER(TRIM(CAST(v.metodo_pago AS VARCHAR))) = 'fiado'
-        ORDER BY v.fecha_hora DESC
+        GROUP BY v.cliente_nota
     """
-    df_deudores = duckdb.query(query_deudores).to_df().fillna("")
-
+    df_deudores_analytics = duckdb.query(query_deudores).to_df().fillna("")
 
     # ==========================================
     # 4. CARGA A GOOGLE SHEETS (LOAD IDEMPOTENTE)
@@ -201,7 +194,10 @@ def run_pipeline():
     reemplazar_hoja("BI_Ventas_Modeladas", df_modelo_ventas, "20")
     reemplazar_hoja("BI_Inventario", df_inventario, "10")
     reemplazar_hoja("BI_Finanzas_Resumen", df_financiero, "10")
-    reemplazar_hoja("BI_Deudores", df_deudores, "10")
+    
+    # Escribimos en una pestaña nueva para el Dashboard analítico.
+    # NUNCA tocamos la tabla transaccional de AppSheet.
+    reemplazar_hoja("BI_Deudores_Analytics", df_deudores_analytics, "5")
 
     print("🎉 ¡ETL FINALIZADO CON ÉXITO! Tu Dashboard está blindado.")
 
