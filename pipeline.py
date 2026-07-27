@@ -46,7 +46,11 @@ def run_pipeline():
             
     # Rellenar métodos de pago vacíos
     df_ventas['metodo_pago'] = df_ventas['metodo_pago'].replace('', 'No Definido')
-
+    if 'cliente_nota' not in df_ventas.columns:
+        df_ventas['cliente_nota'] = 'Sin Nombre'
+    else:
+        df_ventas['cliente_nota'] = df_ventas['cliente_nota'].replace('', 'Sin Nombre')
+    
     # Normalización de Fechas para Looker Studio
     df_ventas['fecha_hora'] = pd.to_datetime(df_ventas['fecha_hora'], errors='coerce')
     df_ventas['fecha_hora'] = df_ventas['fecha_hora'].fillna(pd.Timestamp.now()).dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -122,7 +126,9 @@ def run_pipeline():
             FROM df_ventas AS v
             LEFT JOIN df_detalle AS d 
                 ON v.id_venta = d.id_venta
-            WHERE v.id_venta IS NOT NULL AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
+            WHERE v.id_venta IS NOT NULL 
+              AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
+              AND LOWER(TRIM(CAST(v.metodo_pago AS VARCHAR))) != 'fiado'
             GROUP BY SUBSTRING(v.fecha_hora, 1, 7)
         ),
         egresos AS (
@@ -151,6 +157,28 @@ def run_pipeline():
     """
     df_financiero = duckdb.query(query_financiero).to_df().fillna("")
 
+    # D) Modelo de Deudores (Fiados)
+    query_deudores = """
+        SELECT 
+            v.fecha_hora,
+            v.id_venta,
+            v.cliente_nota,
+            p.nombre AS producto,
+            d.cantidad,
+            ROUND(CAST(d.precio_venta_aplicado AS DOUBLE), 2) AS precio_unitario,
+            ROUND(CAST(d.cantidad * d.precio_venta_aplicado AS DOUBLE), 2) AS deuda_total
+        FROM df_ventas AS v
+        LEFT JOIN df_detalle AS d 
+            ON v.id_venta = d.id_venta
+        LEFT JOIN df_productos AS p 
+            ON d.id_producto = p.id_producto
+        WHERE v.id_venta IS NOT NULL 
+          AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
+          AND LOWER(TRIM(CAST(v.metodo_pago AS VARCHAR))) = 'fiado'
+        ORDER BY v.fecha_hora DESC
+    """
+    df_deudores = duckdb.query(query_deudores).to_df().fillna("")
+
 
     # ==========================================
     # 4. CARGA A GOOGLE SHEETS (LOAD IDEMPOTENTE)
@@ -173,6 +201,7 @@ def run_pipeline():
     reemplazar_hoja("BI_Ventas_Modeladas", df_modelo_ventas, "20")
     reemplazar_hoja("BI_Inventario", df_inventario, "10")
     reemplazar_hoja("BI_Finanzas_Resumen", df_financiero, "10")
+    reemplazar_hoja("BI_Deudores", df_deudores, "10")
 
     print("🎉 ¡ETL FINALIZADO CON ÉXITO! Tu Dashboard está blindado.")
 
