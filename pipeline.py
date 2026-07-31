@@ -11,8 +11,7 @@ def run_pipeline():
     # ==========================================
     print("🔐 Autenticando con Google...")
     CONFIG_SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
+        'https://www.googleapis.com/auth/spreadsheets'
     ]
     credenciales = Credentials.from_service_account_file('credenciales.json', scopes=CONFIG_SCOPES)
     cliente_gmail = gspread.authorize(credenciales)
@@ -178,26 +177,36 @@ def run_pipeline():
     # ==========================================
     print("📤 Subiendo tablas procesadas a Google Sheets...")
 
-    def reemplazar_hoja(nombre_hoja, dataframe, cols):
+    def reemplazar_hoja_segura(nombre_hoja, dataframe, cols):
+        nombre_temp = f"{nombre_hoja}_TEMP"
+        
+        # 1. Crear la hoja temporal e inyectar los datos
         try:
-            hoja = sheet_id.worksheet(nombre_hoja)
-            hoja.clear()
-            print(f"♻️ Pestaña '{nombre_hoja}' limpiada con éxito.")
-        except Exception:
-            hoja = sheet_id.add_worksheet(title=nombre_hoja, rows="1000", cols=cols)
-            print(f"✨ Pestaña '{nombre_hoja}' creada desde cero.")
+            hoja_temp = sheet_id.add_worksheet(title=nombre_temp, rows="1000", cols=cols)
+            datos = [dataframe.columns.values.tolist()] + dataframe.values.tolist()
+            hoja_temp.update(range_name='A1', values=datos)
+            print(f"✅ Datos cargados con éxito en staging: '{nombre_temp}'")
+        except Exception as e:
+            print(f"❌ Error crítico al escribir en staging para {nombre_hoja}. Abortando para proteger producción. Error: {e}")
+            return # Salimos para no romper nada
             
-        datos = [dataframe.columns.values.tolist()] + dataframe.values.tolist()
-        hoja.update(range_name='A1', values=datos)
-        print(f"✅ Pestaña '{nombre_hoja}' actualizada.")
+        # 2. Si llegamos aquí, los datos están seguros. Ahora hacemos el SWAP.
+        try:
+            hoja_vieja = sheet_id.worksheet(nombre_hoja)
+            sheet_id.del_worksheet(hoja_vieja)
+            print(f"🗑️ Hoja antigua '{nombre_hoja}' eliminada.")
+        except Exception:
+            print(f"⚠️ La hoja '{nombre_hoja}' no existía, se creará una nueva.")
 
-    reemplazar_hoja("BI_Ventas_Modeladas", df_modelo_ventas, "20")
-    reemplazar_hoja("BI_Inventario", df_inventario, "10")
-    reemplazar_hoja("BI_Finanzas_Resumen", df_financiero, "10")
-    
-    # Escribimos en una pestaña nueva para el Dashboard analítico.
-    # NUNCA tocamos la tabla transaccional de AppSheet.
-    reemplazar_hoja("BI_Deudores_Analytics", df_deudores_analytics, "5")
+        # 3. Renombrar la hoja temporal a producción
+        hoja_temp.update_title(nombre_hoja)
+        print(f"🚀 SWAP EXITOSO: '{nombre_temp}' ahora es la tabla oficial '{nombre_hoja}'.")
+
+    # Ejecutamos las cargas con la nueva función segura
+    reemplazar_hoja_segura("BI_Ventas_Modeladas", df_modelo_ventas, "20")
+    reemplazar_hoja_segura("BI_Inventario", df_inventario, "10")
+    reemplazar_hoja_segura("BI_Finanzas_Resumen", df_financiero, "10")
+    reemplazar_hoja_segura("BI_Deudores_Analytics", df_deudores_analytics, "5")
 
     print("🎉 ¡ETL FINALIZADO CON ÉXITO! Tu Dashboard está blindado.")
 
