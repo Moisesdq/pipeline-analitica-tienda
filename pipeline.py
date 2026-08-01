@@ -19,12 +19,10 @@ def run_pipeline():
     sheet_id = cliente_gmail.open('DB_Tienda_Operacional')
     print("✅ Conectado exitosamente a DB_Tienda_Operacional")
 
-# ==========================================
-    # 2. EXTRACCIÓN Y LIMPIEZA DE DATOS (Data Quality)
-    # ==========================================
     # ==========================================
     # 2. EXTRACCIÓN Y LIMPIEZA DE DATOS (Data Quality)
     # ==========================================
+
     print("📥 Extrayendo tablas desde Google Sheets...")
     
     # Función para evitar que Pandas colapse si la tabla está vacía (Día 1 del mes)
@@ -82,7 +80,7 @@ def run_pipeline():
         df_ventas_total['cliente_nota'] = df_ventas_total['cliente_nota'].replace('', 'Sin Nombre')
     
     # Normalización de Fechas para Looker Studio
-    df_ventas_total['fecha_hora'] = pd.to_datetime(df_ventas_total['fecha_hora'], errors='coerce')
+    df_ventas_total['fecha_hora'] = pd.to_datetime(df_ventas_total['fecha_hora'], dayfirst=True, errors='coerce')
     df_ventas_total['fecha_hora'] = df_ventas_total['fecha_hora'].fillna(pd.Timestamp.now()).dt.strftime('%Y-%m-%d %H:%M:%S')
     
     df_gastos['fecha'] = pd.to_datetime(df_gastos['fecha'], format='%d/%m/%Y', errors='coerce').dt.strftime('%Y-%m-%d')
