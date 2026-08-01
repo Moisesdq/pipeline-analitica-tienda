@@ -11,7 +11,8 @@ def run_pipeline():
     # ==========================================
     print("🔐 Autenticando con Google...")
     CONFIG_SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets'
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
     ]
     credenciales = Credentials.from_service_account_file('credenciales.json', scopes=CONFIG_SCOPES)
     cliente_gmail = gspread.authorize(credenciales)
