@@ -19,46 +19,73 @@ def run_pipeline():
     sheet_id = cliente_gmail.open('DB_Tienda_Operacional')
     print("✅ Conectado exitosamente a DB_Tienda_Operacional")
 
-
+# ==========================================
+    # 2. EXTRACCIÓN Y LIMPIEZA DE DATOS (Data Quality)
+    # ==========================================
     # ==========================================
     # 2. EXTRACCIÓN Y LIMPIEZA DE DATOS (Data Quality)
     # ==========================================
     print("📥 Extrayendo tablas desde Google Sheets...")
-    df_ventas = pd.DataFrame(sheet_id.worksheet('Ventas').get_all_records())
-    df_detalle = pd.DataFrame(sheet_id.worksheet('Detalle_Ventas').get_all_records())
+    
+    # Función para evitar que Pandas colapse si la tabla está vacía (Día 1 del mes)
+    def extraer_seguro(nombre_hoja):
+        hoja = sheet_id.worksheet(nombre_hoja)
+        registros = hoja.get_all_records()
+        if not registros: # Si no hay datos, forzamos a que lea la fila 1 como columnas
+            encabezados = hoja.row_values(1)
+            return pd.DataFrame(columns=encabezados)
+        return pd.DataFrame(registros)
+
+    # Datos Calientes con extracción segura
+    df_ventas_caliente = extraer_seguro('Ventas')
+    df_detalle_caliente = extraer_seguro('Detalle_Ventas')
+    
+    # Tablas maestras (Estas siempre tienen datos)
     df_productos = pd.DataFrame(sheet_id.worksheet('Productos').get_all_records())
     df_gastos = pd.DataFrame(sheet_id.worksheet('Gastos').get_all_records())
+    df_snapshots = pd.DataFrame(sheet_id.worksheet('Snapshots_Inventario').get_all_records())
+
+    print("🧊 Extrayendo bóvedas de datos históricos...")
+    try:
+        df_ventas_fria = pd.DataFrame(sheet_id.worksheet('Ventas_Historicas').get_all_records())
+        df_detalle_fria = pd.DataFrame(sheet_id.worksheet('Detalle_Ventas_Historicas').get_all_records())
+    except Exception:
+        # Si no existen, usamos las columnas de las tablas calientes
+        df_ventas_fria = pd.DataFrame(columns=df_ventas_caliente.columns)
+        df_detalle_fria = pd.DataFrame(columns=df_detalle_caliente.columns)
 
     print("🧹 Curando los datos y normalizando formatos...")
-    # Normalización de tipos numéricos (Directa, confiando en la calidad del origen)
-    df_detalle['cantidad'] = pd.to_numeric(df_detalle['cantidad'], errors='coerce').fillna(0)
-    df_detalle['precio_compra_aplicado'] = pd.to_numeric(df_detalle['precio_compra_aplicado'], errors='coerce').fillna(0)
-    df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'], errors='coerce').fillna(0)
+    # Unificamos Hot y Cold SOLO para finanzas
+    df_ventas_total = pd.concat([df_ventas_caliente, df_ventas_fria], ignore_index=True)
+    df_detalle_total = pd.concat([df_detalle_caliente, df_detalle_fria], ignore_index=True)
+
+    # Normalización de tipos numéricos
+    df_detalle_caliente['cantidad'] = pd.to_numeric(df_detalle_caliente['cantidad'], errors='coerce').fillna(0)
+    df_detalle_total['cantidad'] = pd.to_numeric(df_detalle_total['cantidad'], errors='coerce').fillna(0)
+    df_detalle_total['precio_compra_aplicado'] = pd.to_numeric(df_detalle_total['precio_compra_aplicado'], errors='coerce').fillna(0)
+    df_detalle_total['precio_venta_aplicado'] = pd.to_numeric(df_detalle_total['precio_venta_aplicado'], errors='coerce').fillna(0)
     
     df_productos['stock_inicial'] = pd.to_numeric(df_productos['stock_inicial'], errors='coerce').fillna(0)
     df_productos['stock_minimo'] = pd.to_numeric(df_productos['stock_minimo'], errors='coerce').fillna(0)
     df_gastos['monto'] = pd.to_numeric(df_gastos['monto'], errors='coerce').fillna(0)
-    df_snapshots = pd.DataFrame(sheet_id.worksheet('Snapshots_Inventario').get_all_records())
 
     # Limpieza de textos e IDs
-    for df in [df_ventas, df_detalle, df_productos, df_gastos]:
+    for df in [df_ventas_total, df_detalle_total, df_detalle_caliente, df_productos, df_gastos]:
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].astype(str).str.strip()
             
     # Rellenar métodos de pago vacíos
-    df_ventas['metodo_pago'] = df_ventas['metodo_pago'].replace('', 'No Definido')
-    if 'cliente_nota' not in df_ventas.columns:
-        df_ventas['cliente_nota'] = 'Sin Nombre'
+    df_ventas_total['metodo_pago'] = df_ventas_total['metodo_pago'].replace('', 'No Definido')
+    if 'cliente_nota' not in df_ventas_total.columns:
+        df_ventas_total['cliente_nota'] = 'Sin Nombre'
     else:
-        df_ventas['cliente_nota'] = df_ventas['cliente_nota'].replace('', 'Sin Nombre')
+        df_ventas_total['cliente_nota'] = df_ventas_total['cliente_nota'].replace('', 'Sin Nombre')
     
     # Normalización de Fechas para Looker Studio
-    df_ventas['fecha_hora'] = pd.to_datetime(df_ventas['fecha_hora'], errors='coerce')
-    df_ventas['fecha_hora'] = df_ventas['fecha_hora'].fillna(pd.Timestamp.now()).dt.strftime('%Y-%m-%d %H:%M:%S')
+    df_ventas_total['fecha_hora'] = pd.to_datetime(df_ventas_total['fecha_hora'], errors='coerce')
+    df_ventas_total['fecha_hora'] = df_ventas_total['fecha_hora'].fillna(pd.Timestamp.now()).dt.strftime('%Y-%m-%d %H:%M:%S')
     
-    # Estandarizar fecha de gastos
     df_gastos['fecha'] = pd.to_datetime(df_gastos['fecha'], format='%d/%m/%Y', errors='coerce').dt.strftime('%Y-%m-%d')
-
     # ==========================================
     # 3. TRANSFORMACIÓN CON DUCKDB (SQL BLINDADO)
     # ==========================================
@@ -77,8 +104,8 @@ def run_pipeline():
             ROUND(CAST(d.precio_venta_aplicado AS DOUBLE), 2) AS precio_venta,
             ROUND(CAST(d.cantidad * d.precio_venta_aplicado AS DOUBLE), 2) AS subtotal,
             ROUND(CAST((d.precio_venta_aplicado - d.precio_compra_aplicado) * d.cantidad AS DOUBLE), 2) AS ganancia_bruta
-        FROM df_ventas AS v
-        LEFT JOIN df_detalle AS d 
+        FROM df_ventas_total AS v
+        LEFT JOIN df_detalle_total AS d 
             ON v.id_venta = d.id_venta
         LEFT JOIN df_productos AS p 
             ON d.id_producto = p.id_producto
@@ -86,13 +113,13 @@ def run_pipeline():
     """
     df_modelo_ventas = duckdb.query(query_ventas_completas).to_df().fillna("")
 
-    # B) Modelo de Inventario con Alertas
+  # B) Modelo de Inventario con Alertas (SOLO USA DATOS CALIENTES)
     query_inventario = """
         WITH ventas_mes_actual AS (
             SELECT 
                 d.id_producto,
                 SUM(d.cantidad) AS total_vendido
-            FROM df_detalle AS d
+            FROM df_detalle_caliente AS d
             WHERE d.id_producto IS NOT NULL AND TRIM(CAST(d.id_producto AS VARCHAR)) != ''
             GROUP BY d.id_producto
         ),
@@ -101,7 +128,6 @@ def run_pipeline():
                 id_producto, 
                 CAST(stock_cierre AS DOUBLE) AS stock_base
             FROM df_snapshots
-            -- Aquí en el futuro DuckDB siempre agarrará el stock del último mes cerrado
         )
         SELECT 
             p.id_producto,
@@ -131,8 +157,8 @@ def run_pipeline():
                 SUBSTRING(v.fecha_hora, 1, 7) AS mes_anio,
                 SUM(d.cantidad * d.precio_venta_aplicado) AS ingresos_totales,
                 SUM((d.precio_venta_aplicado - d.precio_compra_aplicado) * d.cantidad) AS ganancia_bruta
-            FROM df_ventas AS v
-            LEFT JOIN df_detalle AS d 
+            FROM df_ventas_total AS v
+            LEFT JOIN df_detalle_total AS d 
                 ON v.id_venta = d.id_venta
             WHERE v.id_venta IS NOT NULL 
               AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
@@ -171,8 +197,8 @@ def run_pipeline():
             v.cliente_nota AS cliente,
             SUM(d.cantidad * d.precio_venta_aplicado) AS total_fiado_historico,
             COUNT(DISTINCT v.id_venta) AS cantidad_compras_fiadas
-        FROM df_ventas AS v
-        LEFT JOIN df_detalle AS d 
+        FROM df_ventas_total AS v
+        LEFT JOIN df_detalle_total AS d 
             ON v.id_venta = d.id_venta
         WHERE v.id_venta IS NOT NULL 
           AND TRIM(CAST(v.id_venta AS VARCHAR)) != ''
