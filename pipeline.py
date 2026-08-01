@@ -29,14 +29,15 @@ def run_pipeline():
     df_gastos = pd.DataFrame(sheet_id.worksheet('Gastos').get_all_records())
 
     print("🧹 Curando los datos y normalizando formatos...")
-    # Normalización de tipos numéricos (Filtro anti-comas riguroso)
-    df_detalle['cantidad'] = pd.to_numeric(df_detalle['cantidad'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    df_detalle['precio_compra_aplicado'] = pd.to_numeric(df_detalle['precio_compra_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    # Normalización de tipos numéricos (Directa, confiando en la calidad del origen)
+    df_detalle['cantidad'] = pd.to_numeric(df_detalle['cantidad'], errors='coerce').fillna(0)
+    df_detalle['precio_compra_aplicado'] = pd.to_numeric(df_detalle['precio_compra_aplicado'], errors='coerce').fillna(0)
+    df_detalle['precio_venta_aplicado'] = pd.to_numeric(df_detalle['precio_venta_aplicado'], errors='coerce').fillna(0)
     
-    df_productos['stock_inicial'] = pd.to_numeric(df_productos['stock_inicial'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    df_productos['stock_minimo'] = pd.to_numeric(df_productos['stock_minimo'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    df_gastos['monto'] = pd.to_numeric(df_gastos['monto'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    df_productos['stock_inicial'] = pd.to_numeric(df_productos['stock_inicial'], errors='coerce').fillna(0)
+    df_productos['stock_minimo'] = pd.to_numeric(df_productos['stock_minimo'], errors='coerce').fillna(0)
+    df_gastos['monto'] = pd.to_numeric(df_gastos['monto'], errors='coerce').fillna(0)
+    df_snapshots = pd.DataFrame(sheet_id.worksheet('Snapshots_Inventario').get_all_records())
 
     # Limpieza de textos e IDs
     for df in [df_ventas, df_detalle, df_productos, df_gastos]:
@@ -86,35 +87,42 @@ def run_pipeline():
 
     # B) Modelo de Inventario con Alertas
     query_inventario = """
-        WITH ventas_resumen AS (
+        WITH ventas_mes_actual AS (
             SELECT 
                 d.id_producto,
                 SUM(d.cantidad) AS total_vendido
             FROM df_detalle AS d
             WHERE d.id_producto IS NOT NULL AND TRIM(CAST(d.id_producto AS VARCHAR)) != ''
             GROUP BY d.id_producto
+        ),
+        ultimo_snapshot AS (
+            SELECT 
+                id_producto, 
+                CAST(stock_cierre AS DOUBLE) AS stock_base
+            FROM df_snapshots
+            -- Aquí en el futuro DuckDB siempre agarrará el stock del último mes cerrado
         )
         SELECT 
             p.id_producto,
             p.nombre,
-            p.stock_inicial,
+            COALESCE(s.stock_base, p.stock_inicial) AS stock_inicial,
             p.stock_minimo,
-            COALESCE(vr.total_vendido, 0) AS total_vendido,
-            (p.stock_inicial - COALESCE(vr.total_vendido, 0)) AS stock_actual,
+            COALESCE(v.total_vendido, 0) AS total_vendido,
+            (COALESCE(s.stock_base, p.stock_inicial) - COALESCE(v.total_vendido, 0)) AS stock_actual,
             CASE 
-                WHEN (p.stock_inicial - COALESCE(vr.total_vendido, 0)) < 0 THEN 'REVISAR: Stock Negativo'
-                WHEN (p.stock_inicial - COALESCE(vr.total_vendido, 0)) <= p.stock_minimo THEN 'ALERTA: Stock Bajo'
+                WHEN (COALESCE(s.stock_base, p.stock_inicial) - COALESCE(v.total_vendido, 0)) < 0 THEN 'REVISAR: Stock Negativo'
+                WHEN (COALESCE(s.stock_base, p.stock_inicial) - COALESCE(v.total_vendido, 0)) <= p.stock_minimo THEN 'ALERTA: Stock Bajo'
                 ELSE 'OK'
             END AS estado_inventario
         FROM df_productos AS p
-        LEFT JOIN ventas_resumen AS vr 
-            ON p.id_producto = vr.id_producto
+        LEFT JOIN ultimo_snapshot AS s
+            ON p.id_producto = s.id_producto
+        LEFT JOIN ventas_mes_actual AS v 
+            ON p.id_producto = v.id_producto
         WHERE p.id_producto IS NOT NULL 
           AND TRIM(CAST(p.id_producto AS VARCHAR)) != ''
-          AND LOWER(TRIM(CAST(p.nombre AS VARCHAR))) != 'null'
     """
     df_inventario = duckdb.query(query_inventario).to_df().fillna("")
-
     # C) Modelo Financiero (Valores Numéricos Forzados)
     query_financiero = """
         WITH ingresos AS (
